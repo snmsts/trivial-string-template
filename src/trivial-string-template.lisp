@@ -224,64 +224,64 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
   (declare (simple-string template variable-pattern)
            (character delimiter)
            (optimize speed (space 0) (safety 0) (debug 0) (compilation-speed 0)))
-  (flet ((tokenize (char)
-           (funcall tokenizer char)))
-    (let ((segments %segments%)
-          (variables %variables%))
-      (declare (type (array (or simple-string cons) (*)) segments)
-               (type (array simple-string (*)) variables))
-      (setf (fill-pointer segments) 0
-            (fill-pointer variables) 0)
-      (flet ((collect-variable (variable)
+  (let ((segments %segments%)
+        (variables %variables%))
+    (declare (type (array (or simple-string cons) (*)) segments)
+             (type (array simple-string (*)) variables))
+    (setf (fill-pointer segments) 0
+          (fill-pointer variables) 0)
+    (labels ((tokenize (char)
+               (declare (type character char))
+               (funcall tokenizer char))
+             (collect-variable (variable)
                (declare (type simple-string variable))
                (if (variable-pattern-matched-p variable variable-pattern)
                    (progn
                      (vector-push-extend variable variables)
                      (vector-push-extend (list :variable variable) segments))
                    (error "~A is not a valid identifier." variable))))
-        (with-string-parsing (template)
-          (tagbody
-           meet-next-delimiter
-             (bind (str (skip-until (lambda (c) (char= c delimiter))))
-               (declare (type simple-string str))
-               (cond ((eofp)
-                      (vector-push-extend str segments)
-                      (go result))
-                     ((string= str +empty-string+)
-                      (go parse-variable))
-                     (t (vector-push-extend str segments)
-                        (go parse-variable))))
-           parse-variable
-             (progn (advance)
-                    (let ((current (current)))
-                      (declare (type character current))
-                      (cond ((char= current delimiter) ;; escape
-                             (vector-push-extend (string delimiter) segments)
-                             (advance)
-                             (go meet-next-delimiter))
-                            ((char= current +left-brace+) ;; brace wrapped placeholder
-                             (advance)
-                             (bind (var (skip-until (lambda (c) (char= c +right-brace+))))
-                               (declare (type simple-string var))
-                               (unless (char= (current) +right-brace+)
-                                 (error "Mismatched braces."))
+      (with-string-parsing (template)
+        (tagbody
+         meet-next-delimiter
+           (bind (str (skip-until (lambda (c) (char= c delimiter))))
+             (declare (type simple-string str))
+             (cond ((eofp)
+                    (vector-push-extend str segments)
+                    (go result))
+                   ((string= str +empty-string+)
+                    (go parse-variable))
+                   (t (vector-push-extend str segments)
+                      (go parse-variable))))
+         parse-variable
+           (progn (advance*)
+                  (let ((current (current)))
+                    (declare (type character current))
+                    (cond ((char= current delimiter) ;; escape
+                           (vector-push-extend (string delimiter) segments)
+                           (advance*)
+                           (go meet-next-delimiter))
+                          ((char= current +left-brace+) ;; brace wrapped placeholder
+                           (advance*)
+                           (bind (var (skip-until (lambda (c) (char= c +right-brace+))))
+                             (declare (type simple-string var))
+                             (unless (char= (current) +right-brace+)
+                               (error "Mismatched braces."))
+                             (collect-variable var)
+                             (advance*)
+                             (if (eofp)
+                                 (go result)
+                                 (go meet-next-delimiter))))
+                          (t (bind (var (skip-until #'tokenize))
+                               (declare (type simple-string var))                               
                                (collect-variable var)
                                (if (eofp)
                                    (go result)
                                    (progn
-                                     (advance)
-                                     (go meet-next-delimiter)))))
-                            (t (bind (var (skip-until #'tokenize))
-                                 (declare (type simple-string var))                               
-                                 (collect-variable var)
-                                 (if (eofp)
-                                     (go result)
-                                     (progn
-                                       (go meet-next-delimiter))))))))
-           result
-             (return-from parse-template
-               (values (make-template-datum segments)
-                       (subseq variables 0 (fill-pointer variables))))))))))
+                                     (go meet-next-delimiter))))))))
+         result
+           (return-from parse-template
+             (values (make-template-datum segments)
+                     (subseq variables 0 (fill-pointer variables)))))))))
 
 (defun substitute (template &rest args &key &allow-other-keys)
   "Given a template string and the variables(as keywords) it requires, return the formatted string;
@@ -420,10 +420,9 @@ uses the variable's name as a default value."
         (apply 'delete-separators (template-tokenizer this) separators)))
 
 (defmethod (setf safe) :after ((new symbol) (this template))
-  (unless (eql new (slot-value this 'safe))
-    (with-slots (delimiter datum variables safe) this
-      (closer-mop:set-funcallable-instance-function
-       this (make-template-function datum variables delimiter :safe safe)))))
+  (with-slots (delimiter datum variables safe) this
+    (closer-mop:set-funcallable-instance-function
+     this (make-template-function datum variables delimiter :safe safe))))
 
 (defun reparse-template (template)
   "Re-parse a template with its own slots;
