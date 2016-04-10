@@ -25,4 +25,4 @@ env:
     - ros config
       
   script:
-    - run-prove proc-parse-test.asd
+    - run-prove trivial-string-template-test.asd
