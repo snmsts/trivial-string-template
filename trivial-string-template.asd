@@ -4,7 +4,7 @@
 |#
 
 #|
-  A trivial string template library, inspired by Python's String.Template
+  A trivial string template library, inspired by Python's string.Template
 
   Author: David Guru (david_guru@gty.org.in)
 |#
@@ -19,7 +19,7 @@
 
 (defsystem trivial-string-template
   :version "0.1"
-  :author "David Guru"
+  :author "David Gu"
   :license "MIT"
   :depends-on (#:alexandria
                #:proc-parse
@@ -28,7 +28,7 @@
   :components ((:module "src"
                 :components
                 ((:file "trivial-string-template"))))
-  :description "A trivial string template library, inspired by Python's String.Template"
+  :description "A trivial string template library, inspired by Python's string.Template"
   :long-description
   #.(with-open-file (stream (merge-pathnames
                              #p"README.markdown"
