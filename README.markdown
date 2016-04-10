@@ -44,7 +44,7 @@ And you can use '{}' to set a so called placeholder:
 
 It will produce a template class, which is funcallable.
 
-```commmon-lisp
+```common-lisp
 (defvar *tmpl* (template "$who likes $what"))
 (funcall *tmpl* :who "a" :what "b")
 ;; => "a likes b"
