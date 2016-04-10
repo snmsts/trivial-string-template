@@ -1,4 +1,6 @@
-# Trivial-String-Template - A trivial string template library, inspired by Python's string.Template
+# Trivial-String-Template 
+
+A trivial string template library, inspired by Python's string.Template
 
 ## Usage
 
@@ -63,8 +65,8 @@ Just a wrapper around template class.
 
 ## TODO
 
-- [] Provide a more detailed APIs documenatation.
-- [] A comprehensive test.
+- [ ] Provide a more detailed APIs documenatation.
+- [ ] A comprehensive test.
 
 ## Author
 
