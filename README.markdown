@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.org/macdavid313/trivial-string-template.svg?branch=master)](https://travis-ci.org/macdavid313/trivial-string-template)
 [![Coverage Status](https://coveralls.io/repos/github/macdavid313/trivial-string-template/badge.svg?branch=master)](https://coveralls.io/github/macdavid313/trivial-string-template?branch=master)
+[![Quicklisp](http://quickdocs.org/badge/trivial-string-template.svg)](http://quickdocs.org/trivial-string-template/)
 
 A trivial string template library, inspired by Python's string.Template
 
