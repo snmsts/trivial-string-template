@@ -52,6 +52,15 @@
           (expected (fourth tmpl)))
       (is (apply 'safe-substitute template args) expected :test 'string=))))
 
+(subtest "TEMPLATE-BASIC"
+  (dolist (tmpl *test-templates*)
+    (let* ((delimiter (first tmpl))
+           (source-string (second tmpl))
+           (args (third tmpl))
+           (expected (fourth tmpl))
+           (template (template source-string :delimiter delimiter)))
+      (is (apply template args) expected :test 'string=))))
+
 (subtest "DEFINE-TEMPLATE-BASIC"
   (dolist (tmpl *test-templates*)
     (let* ((delimiter (first tmpl))
@@ -59,6 +68,40 @@
            (args (third tmpl))
            (expected (fourth tmpl))
            (obj (template template :delimiter delimiter)))
-        (is (apply obj args) expected))))
+      (is (apply obj args) expected))))
 
+(subtest "TEST-SAFE-MODE"
+  (let ((tmpl "$who is a $person")
+        (expected "Gu is a $person"))
+    (is (safe-substitute tmpl :who "Gu") expected :test 'string=))
+  (let ((tmpl "$who is a ${person}")
+        (expected "Gu is a $person"))
+    (is (safe-substitute tmpl :who "Gu") expected :test 'string=))
+  (let* ((tmpl "$who is a $person")
+         (expected "$who is a Lisper")
+         (obj (template tmpl :safe t)))
+    (is (funcall obj :person "Lisper") expected :test 'string=))
+  (let* ((tmpl "#{who} is a #{person}")
+         (expected "#who is a Lisper")
+         (obj (template tmpl :delimiter #\# :safe t)))
+    (is (funcall obj :person "Lisper") expected :test 'string=))
+  (let* ((tmpl "$who is a $person")
+         (expected "$who is a Lisper"))
+    (define-template tmpl-fn (:safe t) tmpl)
+    (is (tmpl-fn :person "Lisper") expected :test 'string=))
+  (let* ((tmpl "#{who} is a #{person}")
+         (expected "#who is a Lisper"))
+    (define-template tmpl-fn (:delimiter #\# :safe t) tmpl)
+    (is (tmpl-fn :person "Lisper") expected :test 'string=)))
+
+(subtest "TEMPLATE-ACCESSORS"
+  (let ((tmpl (template "$who likes $me.")))
+    (setf (safe tmpl) t)
+    (is (funcall tmpl :me "David") "$who likes David." :test 'string=)
+    (setf (source-string tmpl) "$lisp is $comment.")
+    (is (funcall tmpl :lisp :|common-lisp| :comment :|great|) "common-lisp is great." :test 'string=)
+    (setf (delimiter tmpl) #\@)
+    (setf (source-string tmpl) "@lisp is @comment.")
+    (is (funcall tmpl :lisp :|common-lisp| :comment :|great|) "common-lisp is great." :test 'string=)))
+    
 (finalize)
