@@ -72,7 +72,7 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
 (defclass %tokenizer% ()
   ((regex :initarg :regex :accessor tokenizer-regex :type simple-string)
    (compiled-re)
-   (separators :initarg :separators :type list))
+   (separators :initarg :separators :accessor tokenizer-separators :type list))
   (:metaclass closer-mop:funcallable-standard-class)
   (:documentation "A class used for managing separators."))
 
@@ -230,6 +230,9 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
              (type (array simple-string (*)) variables))
     (setf (fill-pointer segments) 0
           (fill-pointer variables) 0)
+    (when (string= template +empty-string+)
+      (return-from parse-template
+        (values (make-template-datum #()) #())))
     (labels ((tokenize (char)
                (declare (type character char))
                (funcall tokenizer char))

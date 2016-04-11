@@ -44,6 +44,14 @@
           (expected (fourth tmpl)))
       (is (apply 'substitute template args) expected :test 'string=))))
 
+(subtest "SUBSTITUTE-EDGE-CASES"
+  (is (substitute "") "" :test 'string=)
+  (is (safe-substitute "") "" :test 'string=)
+  (is (substitute " ") " " :test 'string=)
+  (is (safe-substitute " ") " " :test 'string=)
+  (is (substitute "$$$$$$$who likes $$$$me" :who "sunshine") "$$$sunshine likes $$me" :test 'string=)
+  (is (substitute (format nil "$$$$$$$who likes~%$$$$me") :who "sunshine") (format nil "$$$sunshine likes~%$$me") :test 'string=))
+
 (subtest "SAFE-SUBSTITUTE-BASIC"
   (dolist (tmpl *test-templates*)
     (let ((*delimiter* (first tmpl))
@@ -103,5 +111,32 @@
     (setf (delimiter tmpl) #\@)
     (setf (source-string tmpl) "@lisp is @comment.")
     (is (funcall tmpl :lisp :|common-lisp| :comment :|great|) "common-lisp is great." :test 'string=)))
+
+(subtest "TOKENIZER"
+  (subtest "%TOKENIZER%"
+    (let ((obj (make-tokenizer)))
+      (add-separator obj #\!)
+      (is (tokenizer-separators obj) '(#\! #\Space #\Newline #\Tab) :test 'equal)
+      (is (funcall obj #\!) t)
+      (add-separators obj #\@ #\~)
+      (is (tokenizer-separators obj) '(#\~ #\@ #\! #\Space #\Newline #\Tab) :test 'equal)
+      (delete-separators obj #\@)
+      (is (tokenizer-separators obj) '(#\~ #\! #\Space #\Newline #\Tab) :test 'equal)
+      (delete-separators obj #\~ #\!)
+      (is (tokenizer-separators obj) '(#\Space #\Newline #\Tab) :test 'equal)
+      (setf (tokenizer-regex obj) "a-zA-Z0-9")
+      (is (funcall obj #\-) t :test 'eq)
+      (setf (tokenizer-separators obj) (list #\Q #\Space #\Newline #\Tab))
+      (is (funcall obj #\Q) t :test 'eq)))
+  (subtest "TEMPLATE"
+    (let ((tmpl (template "$first is $second")))
+      (add-separator tmpl #\!)
+      (is (tokenizer-separators (template-tokenizer tmpl)) '(#\! #\Space #\Newline #\Tab) :test 'equal)
+      (add-separators tmpl #\@ #\~)
+      (is (tokenizer-separators (template-tokenizer tmpl)) '(#\~ #\@ #\! #\Space #\Newline #\Tab) :test 'equal)
+      (delete-separators tmpl #\@)
+      (is (tokenizer-separators (template-tokenizer tmpl)) '(#\~ #\! #\Space #\Newline #\Tab) :test 'equal)
+      (delete-separators tmpl #\~ #\!)
+      (is (tokenizer-separators (template-tokenizer tmpl)) '(#\Space #\Newline #\Tab) :test 'equal))))
     
 (finalize)
