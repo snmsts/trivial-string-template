@@ -16,6 +16,7 @@
            #:variable-pattern
            #:template-tokenizer
            #:safe
+           #:reset-template
            #:define-template)
   (:nicknames #:string.template #:st))
 (in-package #:trivial-string-template)
