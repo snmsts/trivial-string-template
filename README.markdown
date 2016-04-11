@@ -15,7 +15,7 @@ A trivial string template library, inspired by Python's string.Template
 ;; => "tim likes kung pao"
 ```
 
-You can specify the delimiter by binding the *delimiter* lexcially:
+You can specify the delimiter by binding the \*delimiter\* lexcially:
 
 ```common-lisp
 (let ((*delimiter* #\%))
