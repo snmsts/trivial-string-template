@@ -1,4 +1,5 @@
 ;;;; trivial-string-template.lisp
+;;;; Inspired by Python's string.Template
 (in-package :cl-user)
 (defpackage #:trivial-string-template
   (:use #:cl #:proc-parse #+allegro #:util.string)
@@ -53,32 +54,36 @@ e.g. `variable-information', `define-symbol-macro', etc.")
   (make-array 0 :adjustable t :fill-pointer 0
               :element-type '(or cons symbol simple-string))
   "A vector that stores segments information for a string template,
-e.g. \"$who likes $me.\" => #((:VARIABLE \"who\") \" likes \" (:VARIABLE \"me\") \".\")")
+e.g. \"$who likes $me.\" => #((:VARIABLE \"who\") \" likes \" (:VARIABLE \"me\") \".\");
+It will be reused over and over again.")
 
 (defvar %variables%
     (make-array 0 :adjustable t :fill-pointer 0
                 :element-type 'simple-string)
   "A vector that stores variables names for a string template,
-e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
+e.g. \"$who likes $me.\" => #(\"who\" \"me\");
+It will be reused over and over again.")
 
 (define-symbol-macro .to-symbol.
-    ;; this symbol macro will be used when the current Lisp is a Modern Case Lisp,
+    ;; this symbol macro will be used when the current Lisp is using Modern Case, e.g. Allegro's `mlisp';
     ;; see http://franz.com/support/documentation/10.0/doc/case.htm#modern-mode-1 for details.
     (case (readtable-case *readtable*)
       (:preserve 'intern)
       (t (lambda (str) (intern (string-upcase str))))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;; Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass %tokenizer% ()
   ((regex :initarg :regex :accessor tokenizer-regex :type simple-string)
    (compiled-re)
    (separators :initarg :separators :accessor tokenizer-separators :type list))
   (:metaclass closer-mop:funcallable-standard-class)
-  (:documentation "A class used for managing separators."))
+  (:documentation "A class used for managing the way of how to recognize separators during parsing a template string."))
 
 (defun make-tokenizer-function (compiled-re separators)
+  "Given a compiled regular expression, and a list of separators characters, produce a predicating function that
+when given a character, it tells whether it's a separator."
   (compile nil `(lambda (char)
                   (or 
                    ,@(dolist (sep separators) `(char= char ,sep))
@@ -87,6 +92,7 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
 
 (defun make-tokenizer
     (&key (regex "[a-zA-Z0-9-]") (separators (list #\Space #\Newline #\Tab)))
+  "Construction function for `%tokenizer%' class."
   (make-instance '%tokenizer% :regex regex :separators separators))
 
 (defmethod initialize-instance :after ((this %tokenizer%) &key)
@@ -188,6 +194,7 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
 
 #+allegro
 (defun collect-string+-arguments (segments variables args &key (safe nil))
+  "Prepare arguments for the `string+' function."
   (loop
      with variable-index = 0 and var = nil
      for seg across segments
@@ -206,7 +213,7 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
 
 #-allegro
 (defun collect-format-arguments (args variables &key (safe nil))
-  "Collect arguments for `format' function."
+  "Prepare arguments for the `format' function."
   (declare (type list args)
            (type (array simple-string (*)) variables))
   (loop for var across variables
@@ -218,9 +225,20 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
                (if value value
                    (error "Missing variable ~A~A information." *delimiter* var)))))
 
+(declaim (inline make-template-datum)
+         (ftype (function ((array (or cons simple-string) (*))) simple-string)))
+(defun make-template-datum (segments)
+  "Given the segments vector, produce the control string for `format' function."
+  (apply 'concatenate 'string
+         (map 'list (lambda (s)
+                      (cond ((consp s) "~A")
+                            ((stringp s) s)))
+              segments)))
+
 (declaim (inline append-supplied-p))
 (defun append-supplied-p (name)
-  "Given a `name' string, concatenate it with \"-SUPPLIED-P\" or \"-supplied-p\"."
+  "Depending on the `(readtable-case *readtable*)', when given a `name' string,
+prefix it with \"-SUPPLIED-P\" or \"-supplied-p\"."
   (concatenate 'string name
                (case (readtable-case *readtable*)
                  (:preserve "-supplied-p")
@@ -229,19 +247,11 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Core Functions and APIs ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(declaim (inline make-template-datum)
-         (ftype (function ((array (or cons simple-string) (*))) simple-string)))
-(defun make-template-datum (segments)
-  (apply 'concatenate 'string
-         (map 'list (lambda (s)
-                      (cond ((consp s) "~A")
-                            ((stringp s) s)))
-              segments)))
-
 (declaim (ftype (function (simple-string character simple-string %tokenizer%)
                           (values (array (or cons symbol simple-string) (*)) (array simple-string (*))))
                 parse-template))
 (defun parse-template (template delimiter variable-pattern &optional (tokenizer *tokenizer*))
+  "The essential parsing function."
   (declare (simple-string template variable-pattern)
            (character delimiter)
            (optimize speed (space 0) (safety 0) (debug 0) (compilation-speed 0)))
@@ -396,7 +406,7 @@ uses the variable's name as a default value."
    #-allegro (datum :initarg :template-datum  :type simple-string)
    (variables :initarg :template-variables  :type (array simple-string (*))))
   (:metaclass closer-mop:funcallable-standard-class)
-  (:documentation "Template Class definition."))
+  (:documentation "The definition of Template class. Unlike `substitute' and `safe-substitute', it is a high-level API."))
 
 (defun template
     (template &key (delimiter *delimiter*) (variable-pattern *variable-pattern*) (safe nil) (tokenizer *tokenizer*))
@@ -428,13 +438,15 @@ uses the variable's name as a default value."
 
 (defmacro define-template
     (var (&key (delimiter *delimiter*) (variable-pattern *variable-pattern*) (safe nil) (tokenizer *tokenizer*)) template)
+  "Given the template string and thoses parameters, set the function definition of the symbol `var'."
   (let ((obj (gensym)))
     `(let ((,obj (template ,template
                            :delimiter ,delimiter
                            :variable-pattern ,variable-pattern
                            :tokenizer ,tokenizer
                            :safe ,safe)))
-       (setf (symbol-function ',var) ,obj))))
+       (handler-bind ((warning #'muffle-warning))
+         (setf (symbol-function ',var) ,obj)))))
 
 (defmethod initialize-instance :after ((this template) &key)
   (with-slots (delimiter #+allegro segments #-allegro datum variables safe) this
@@ -458,14 +470,37 @@ uses the variable's name as a default value."
     (reparse-template template)
     template))
 
+(defmethod (setf source-string) :around ((new string) (this template))
+  (when (string/= new (slot-value this 'source))
+    (call-next-method))
+  this)
+
 (defmethod (setf source-string) :after ((new string) (this template))
-    (reparse-template this))
+  (reparse-template this))
+
+(defmethod (setf delimiter) :around ((new character) (this template))
+  (when (char/= new (slot-value this 'delimiter))
+    (call-next-method))
+  this)
 
 (defmethod (setf delimiter) :after ((new character) (this template))
-    (reparse-template this))
+  (reparse-template this))
+
+(defmethod (setf variable-pattern) :around ((new string) (this template))
+  (when (string/= new (slot-value this 'variable-pattern))
+    (call-next-method))
+  this)
 
 (defmethod (setf variable-pattern) :after ((new string) (this template))
-    (reparse-template this))
+  (reparse-template this))
+
+(defmethod (setf template-tokenizer) :around ((new %tokenizer%) (this template))
+  (when (or (string/= (slot-value new 'regex)
+                      (slot-value (slot-value this 'tokenizer) 'regex))
+            (not (equal (slot-value new 'separators)
+                        (slot-value (slot-value this 'tokenizer) 'separators))))
+    (call-next-method))
+  this)
 
 (defmethod (setf template-tokenizer) :after ((new %tokenizer%) (this template))
   (reparse-template this))
@@ -485,6 +520,11 @@ uses the variable's name as a default value."
 (defmethod delete-separators ((this template) &rest separators)
   (setf (template-tokenizer this)
         (apply 'delete-separators (template-tokenizer this) separators)))
+
+(defmethod (setf safe) :around ((new symbol) (this template))
+  (when (not (eql new (slot-value this 'safe)))
+    (call-next-method))
+  this)
 
 (defmethod (setf safe) :after ((new symbol) (this template))
   (with-slots (delimiter #+allegro segments #-allegro  datum variables safe) this
@@ -520,7 +560,7 @@ this function will be issued when one of slot is modified."
 
 #+allegro
 (defun make-template-function (segments variables delimiter &key (safe nil))
-  "Make a compiled function for a template, given its datum, variables, delimiter and probably the safe."
+  "Given its datum, variables, delimiter and probably the safe, make a compiled function for a template."
   (let ((vars (remove-duplicates variables :test 'string=))
         (args `(,@(loop
                      for seg across segments
@@ -541,7 +581,7 @@ this function will be issued when one of slot is modified."
 
 #-allegro
 (defun make-template-function (datum variables delimiter &key (safe nil))
-  "Make a compiled function for a template, given its datum, variables, delimiter and probably the safe."
+  "Given its datum, variables, delimiter and probably the safe, make a compiled function for a template." 
   (let ((vars (remove-duplicates variables :test 'string=)))
     (compile nil
              (if safe

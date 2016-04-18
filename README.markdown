@@ -4,7 +4,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/macdavid313/trivial-string-template/badge.svg?branch=master)](https://coveralls.io/github/macdavid313/trivial-string-template?branch=master)
 [![Quicklisp](http://quickdocs.org/badge/trivial-string-template.svg)](http://quickdocs.org/trivial-string-template/)
 
-A trivial string template library, inspired by Python's string.Template
+A trivial string template library, inspired by Python's string.Template; you can check around the Python's functionality [here](https://docs.python.org/2/library/string.html?highlight=string.template#string.Template).
 
 ## Usage
 
@@ -15,7 +15,7 @@ A trivial string template library, inspired by Python's string.Template
 ;; => "tim likes kung pao"
 ```
 
-You can specify the delimiter by binding the \*delimiter\* lexcially:
+You can specify the `delimiter` character by lexcially binding the special variable `\*delimiter\*`:
 
 ```common-lisp
 (let ((*delimiter* #\%))
@@ -23,14 +23,14 @@ You can specify the delimiter by binding the \*delimiter\* lexcially:
 ;; => "tim likes kung pao"
 ```
 
-You can escape a delimiter:
+You can escape a `delimiter` character:
 
 ```common-lisp
 (substitute "Give $who $$100" :who "tim")
 ;; => "Give tim $100"
 ```
 
-And you can use '{}' to set a so called placeholder:
+And you can use '{}' to set a so called `placeholder`:
 
 ```common-lisp
 (substitute "$who likes ${what}--is it for real?" :who "tim" :what "kung pao")
@@ -46,7 +46,7 @@ And you can use '{}' to set a so called placeholder:
 
 ### template
 
-It will produce a template class, which is funcallable.
+It will produce a template class, which is funcallable. Some accessors methods are exported, by which you can modify the state of a template and don't you worry about any confilcts because every accessor will automatically adjust and then make itself consistent.
 
 ```common-lisp
 (defvar *tmpl* (template "$who likes $what"))
