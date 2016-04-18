@@ -15,7 +15,7 @@
 (in-package #:trivial-string-template-asd)
 
 #+allegro (require :regexp2)
-
+#+allegro (require :util-string)
 
 (defsystem trivial-string-template
   :version "0.1"

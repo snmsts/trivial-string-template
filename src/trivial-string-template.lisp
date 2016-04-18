@@ -1,7 +1,8 @@
 ;;;; trivial-string-template.lisp
 (in-package :cl-user)
 (defpackage #:trivial-string-template
-  (:use #:cl #:proc-parse)
+  (:use #:cl #:proc-parse #+allegro #:util.string)
+  #+allegro (:import-from #:excl #:if*)
   (:shadow #:substitute)
   (:export #:*delimiter*
            #:*variable-pattern*
@@ -49,13 +50,13 @@ e.g. `variable-information', `define-symbol-macro', etc.")
 (defvar *variable-pattern* +lisp-common-pattern+ "Default variable pattern")
 
 (defvar %segments%
-  (make-array 0 :adjustable 0 :fill-pointer 0
-              :element-type '(or cons simple-string))
+  (make-array 0 :adjustable t :fill-pointer 0
+              :element-type '(or cons symbol simple-string))
   "A vector that stores segments information for a string template,
 e.g. \"$who likes $me.\" => #((:VARIABLE \"who\") \" likes \" (:VARIABLE \"me\") \".\")")
 
 (defvar %variables%
-    (make-array 0 :adjustable 0 :fill-pointer 0
+    (make-array 0 :adjustable t :fill-pointer 0
                 :element-type 'simple-string)
   "A vector that stores variables names for a string template,
 e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
@@ -185,6 +186,25 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
                                       #-allegro (load-time-value (cl-ppcre:create-scanner ,variable-pattern))))
         (t form)))
 
+#+allegro
+(defun collect-string+-arguments (segments variables args &key (safe nil))
+  (loop
+     with variable-index = 0 and var = nil
+     for seg across segments
+     collect
+       (if* (keywordp seg)
+            :then
+            (setf var (aref variables variable-index))
+            (incf variable-index)
+            (let ((val (getf args seg nil)))
+              (if* val
+                   :then val
+                   :elseif safe
+                   :then (string+ *delimiter* var)
+                   :else (error "Missing variable ~A~A information." *delimiter* var)))
+            :else seg)))
+
+#-allegro
 (defun collect-format-arguments (args variables &key (safe nil))
   "Collect arguments for `format' function."
   (declare (type list args)
@@ -196,7 +216,7 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
                                              :keyword)
                                 (when safe (concatenate 'string (string *delimiter*) var)))))
                (if value value
-                   (error "Missing variable(~A~A) information." *delimiter* var)))))
+                   (error "Missing variable ~A~A information." *delimiter* var)))))
 
 (declaim (inline append-supplied-p))
 (defun append-supplied-p (name)
@@ -219,7 +239,7 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
               segments)))
 
 (declaim (ftype (function (simple-string character simple-string %tokenizer%)
-                          (values simple-string (array simple-string (*))))
+                          (values (array (or cons symbol simple-string) (*)) (array simple-string (*))))
                 parse-template))
 (defun parse-template (template delimiter variable-pattern &optional (tokenizer *tokenizer*))
   (declare (simple-string template variable-pattern)
@@ -283,13 +303,33 @@ e.g. \"$who likes $me.\" => #(\"who\" \"me\")")
                                    (progn
                                      (go meet-next-delimiter))))))))
          result
+           #+allegro
            (return-from parse-template
-             (values (make-template-datum segments)
-                     (subseq variables 0 (fill-pointer variables)))))))))
+             (values
+              ;; segments
+              (loop for i from 0 to (1- (fill-pointer segments))
+                do (let ((seg (aref segments i)))
+                     (when (consp seg)
+                       (setf (aref segments i) (intern (case (readtable-case *readtable*)
+                                                         (:preserve (second seg))
+                                                         (t (string-upcase (second seg))))
+                                                       :keyword))))
+                 finally (return segments))
+              ;; variables
+              (subseq variables 0 (fill-pointer variables))))
+           #-allegro
+           (return-from parse-template
+             (values (make-template-datum segments) ;; datum
+                     (subseq variables 0 (fill-pointer variables))))))))) ;; variables
 
 (defun substitute (template &rest args &key &allow-other-keys)
   "Given a template string and the variables(as keywords) it requires, return the formatted string;
 if there's missing variable information, it will issue an error."
+  #+allegro
+  (multiple-value-bind (segments variables)
+      (parse-template template *delimiter* *variable-pattern* *tokenizer*)
+    (apply 'string+ (collect-string+-arguments segments variables args)))
+  #-allegro
   (multiple-value-bind (datum variables)
       (parse-template template *delimiter* *variable-pattern* *tokenizer*)
     (apply 'format nil datum (collect-format-arguments args variables))))
@@ -297,6 +337,11 @@ if there's missing variable information, it will issue an error."
 (define-compiler-macro substitute
     (&whole form &environment env template &rest args &key &allow-other-keys)
   (cond ((constantp template env)
+         #+allegro
+         (multiple-value-bind (segments variables)
+             (parse-template template *delimiter* *variable-pattern* *tokenizer*)
+           `(string+ ,@(collect-string+-arguments segments variables args)))
+         #-allegro
          (multiple-value-bind (datum variables)
              (parse-template template *delimiter* *variable-pattern* *tokenizer*)
            `(format nil ,datum
@@ -307,6 +352,11 @@ if there's missing variable information, it will issue an error."
   "Given a template string and the variables(as keywords) it requires, return the formatted string;
 compared to `substitute', this function won't issue an error when there's missing variable information but
 uses the variable's name as a default value."
+  #+allegro
+  (multiple-value-bind (segments variables)
+      (parse-template template *delimiter* *variable-pattern* *tokenizer*)
+    (apply 'string+ (collect-string+-arguments segments variables args :safe t)))
+  #-allegro
   (multiple-value-bind (datum variables)
       (parse-template template *delimiter* *variable-pattern* *tokenizer*)
     (apply 'format nil datum (collect-format-arguments args variables :safe t))))
@@ -314,6 +364,11 @@ uses the variable's name as a default value."
 (define-compiler-macro safe-substitute
     (&whole form &environment env template &rest args &key &allow-other-keys)
   (cond ((constantp template env)
+         #+allegro
+         (multiple-value-bind (segments variables)
+             (parse-template template *delimiter* *variable-pattern* *tokenizer*)
+           `(string+ ,@(collect-string+-arguments segments variables args :safe t)))
+         #-allegro
          (multiple-value-bind (datum variables)
              (parse-template template *delimiter* *variable-pattern* *tokenizer*)
            `(format nil ,datum
@@ -337,7 +392,8 @@ uses the variable's name as a default value."
    (source :initarg :template-source :accessor source-string :type simple-string)
    (safe :initform nil :initarg :safe :accessor safe :type symbol)
    (tokenizer :initarg :tokenizer :accessor template-tokenizer :type %tokenizer%)
-   (datum :initarg :template-datum  :type simple-string)
+   #+allegro (segments :initarg :template-segments :type (array (or symbol simple-string) (*)))
+   #-allegro (datum :initarg :template-datum  :type simple-string)
    (variables :initarg :template-variables  :type (array simple-string (*))))
   (:metaclass closer-mop:funcallable-standard-class)
   (:documentation "Template Class definition."))
@@ -354,13 +410,20 @@ uses the variable's name as a default value."
                      :variable-pattern
                      #+allegro (regexp:compile-re variable-pattern)
                      #-allegro (cl-ppcre:create-scanner variable-pattern))))
+  #+allegro
+  (multiple-value-bind (segments variables)
+      (parse-template template delimiter variable-pattern tokenizer)
+    (make-instance 'template :template-source template :safe safe :tokenizer tokenizer
+                   :delimiter delimiter
+                   :variable-pattern (regexp:compile-re variable-pattern)
+                   :template-segments segments :template-variables variables))
+  #-allegro
   (multiple-value-bind (datum variables)
       (parse-template template delimiter variable-pattern tokenizer)
     (make-instance 'template :template-source template :safe safe :tokenizer tokenizer
                    :delimiter delimiter
                    :variable-pattern
-                   #+allegro (regexp:compile-re variable-pattern)
-                   #-allegro (cl-ppcre:create-scanner variable-pattern)
+                   (cl-ppcre:create-scanner variable-pattern)
                    :template-datum datum :template-variables variables)))
 
 (defmacro define-template
@@ -372,11 +435,11 @@ uses the variable's name as a default value."
                            :tokenizer ,tokenizer
                            :safe ,safe)))
        (setf (symbol-function ',var) ,obj))))
-         
+
 (defmethod initialize-instance :after ((this template) &key)
-  (with-slots (delimiter datum variables safe) this
+  (with-slots (delimiter #+allegro segments #-allegro datum variables safe) this
     (closer-mop:set-funcallable-instance-function
-     this (make-template-function datum variables delimiter :safe safe))))
+     this (make-template-function #+allegro segments #-allegro datum variables delimiter :safe safe))))
 
 (defun reset-template
     (template source-string
@@ -424,21 +487,21 @@ uses the variable's name as a default value."
         (apply 'delete-separators (template-tokenizer this) separators)))
 
 (defmethod (setf safe) :after ((new symbol) (this template))
-  (with-slots (delimiter datum variables safe) this
+  (with-slots (delimiter #+allegro segments #-allegro  datum variables safe) this
     (closer-mop:set-funcallable-instance-function
-     this (make-template-function datum variables delimiter :safe safe))))
+     this (make-template-function #+allegro segments #-allegro datum variables delimiter :safe safe))))
 
 (defun reparse-template (template)
   "Re-parse a template with its own slots;
 this function will be issued when one of slot is modified."
   (declare (type template template))
-  (with-slots (source delimiter variable-pattern tokenizer datum variables safe) template
-    (multiple-value-bind (datum variables)
+  (with-slots (source delimiter variable-pattern tokenizer #+allegro segments #-allegro datum variables safe) template
+    (multiple-value-bind (#+allegro segments #-allegro datum variables)
         (parse-template source delimiter variable-pattern tokenizer)
-      (setf (slot-value template 'datum) datum
+      (setf (slot-value template #+allegro 'segments #-allegro 'datum) #+allegro segments #-allegro datum
             (slot-value template 'variables) variables)
       (closer-mop:set-funcallable-instance-function
-       template (make-template-function datum variables delimiter :safe safe))
+       template (make-template-function #+allegro segments #-allegro datum variables delimiter :safe safe))
       template)))
 
 (defun make-template-parameters-list (variables delimiter safe)
@@ -455,6 +518,28 @@ this function will be issued when one of slot is modified."
                             ,(funcall .to-symbol. (append-supplied-p var))))
                  vars)))))
 
+#+allegro
+(defun make-template-function (segments variables delimiter &key (safe nil))
+  "Make a compiled function for a template, given its datum, variables, delimiter and probably the safe."
+  (let ((vars (remove-duplicates variables :test 'string=))
+        (args `(,@(loop
+                     for seg across segments
+                     collect (if* (keywordp seg)
+                                  :then (funcall .to-symbol. seg)
+                                  :else seg)))))
+    (compile nil
+             (if* safe
+                  :then `(lambda ,(make-template-parameters-list variables delimiter t)
+                           (string+ ,@args))
+                  :else `(lambda ,(make-template-parameters-list variables delimiter nil)
+                           (progn
+                             ,@(loop for var across vars
+                                  collect `(unless ,(funcall .to-symbol. (append-supplied-p var))
+                                             (error "The variable ~A~A is not supplied, which must be supplied in non-safe mode."
+                                                    ,delimiter ,var)))
+                             (string+ ,@args)))))))
+
+#-allegro
 (defun make-template-function (datum variables delimiter &key (safe nil))
   "Make a compiled function for a template, given its datum, variables, delimiter and probably the safe."
   (let ((vars (remove-duplicates variables :test 'string=)))
