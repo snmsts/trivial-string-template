@@ -17,7 +17,7 @@ env:
 
 install:
   # Install Roswell
-  - curl -L https://raw.githubusercontent.com/snmsts/roswell/$ROSWELL_BRANCH/scripts/install-for-ci.sh | sh
+  - curl -L https://raw.githubusercontent.com/snmsts/roswell/v0.0.5.58/scripts/install-for-ci.sh | sh
   - ros install prove
 
 before_script:
